@@ -1,0 +1,80 @@
+:root{
+  --bg:#faf6f1; --card:#ffffff; --text:#3a2e26; --muted:#8a7a6d;
+  --accent:#c17a3f; --accent-d:#a55f2b; --border:#e7ddd3; --danger:#c1453f;
+  box-sizing:border-box;
+  padding-top:env(safe-area-inset-top,0px);
+  padding-bottom:env(safe-area-inset-bottom,0px);
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --bg:#221b16; --card:#2d251f; --text:#f1e8de; --muted:#a89a8c;
+    --accent:#e0985a; --accent-d:#f0aa70; --border:#453a31; --danger:#e07a75;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#221b16; --card:#2d251f; --text:#f1e8de; --muted:#a89a8c;
+  --accent:#e0985a; --accent-d:#f0aa70; --border:#453a31; --danger:#e07a75;
+}
+*{box-sizing:border-box;}
+html,body{margin:0;padding:0;background:var(--bg);color:var(--text);
+  font-family:-apple-system,Segoe UI,Roboto,Arial,sans-serif;}
+body{padding:16px;max-width:720px;margin:0 auto;}
+h1{font-size:1.4rem;margin:4px 0 16px;text-align:center;color:var(--accent-d);}
+.tabs{display:flex;gap:8px;margin-bottom:16px;position:sticky;top:env(safe-area-inset-top,0px);
+  background:var(--bg);padding:6px 0;z-index:5;}
+.tab{flex:1;padding:10px;border:1px solid var(--border);border-radius:10px;background:var(--card);
+  color:var(--text);text-align:center;cursor:pointer;font-weight:600;}
+.tab.active{background:var(--accent);color:#fff;border-color:var(--accent);}
+.panel{display:none;}
+.panel.active{display:block;}
+.card{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:14px;margin-bottom:12px;}
+.form-row{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:8px;}
+input,select{flex:1;min-width:100px;padding:10px;border:1px solid var(--border);border-radius:8px;
+  background:var(--bg);color:var(--text);font-size:16px;min-height:42px;}
+button{padding:10px 14px;border:none;border-radius:8px;background:var(--accent);color:#fff;
+  font-weight:600;cursor:pointer;font-size:0.9rem;min-height:42px;touch-action:manipulation;}
+button.secondary{background:transparent;color:var(--accent-d);border:1px solid var(--accent);}
+button.danger{background:var(--danger);}
+button.small{padding:7px 10px;font-size:0.8rem;min-height:36px;}
+.item{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:8px;
+  padding:10px 0;border-bottom:1px solid var(--border);}
+.item:last-child{border-bottom:none;}
+.item-info{flex:1;min-width:160px;font-size:0.92rem;word-break:break-word;}
+.item-info b{color:var(--accent-d);}
+.item-actions{display:flex;gap:6px;flex-wrap:wrap;}
+.muted{color:var(--muted);font-size:0.85rem;}
+.recipe-items{margin:8px 0;padding-left:0;list-style:none;}
+.recipe-items li{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:6px;
+  padding:6px 0;border-bottom:1px dashed var(--border);font-size:0.9rem;}
+.recipe-items li span:first-child{word-break:break-word;flex:1;min-width:120px;}
+.overflow-x{overflow-x:auto;}
+.empty{text-align:center;color:var(--muted);padding:20px;font-style:italic;}
+
+.summary{background:var(--bg);border-radius:8px;padding:10px;margin:8px 0;font-size:0.92rem;line-height:1.5;}
+.warn{color:var(--danger);font-size:0.85rem;}
+.total-box{text-align:center;padding:8px 0;}
+.big{font-size:1.9rem;font-weight:700;color:var(--accent-d);}
+
+.modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,0.45);display:flex;
+  align-items:center;justify-content:center;z-index:50;padding:16px;
+  padding-top:calc(16px + env(safe-area-inset-top,0px));
+  padding-bottom:calc(16px + env(safe-area-inset-bottom,0px));}
+.modal-overlay.hidden{display:none;}
+.modal-box{background:var(--card);border:1px solid var(--border);border-radius:14px;
+  padding:18px;width:100%;max-width:380px;max-height:85vh;overflow-y:auto;
+  box-shadow:0 10px 30px rgba(0,0,0,0.25);}
+.modal-box h3{margin:0 0 12px;color:var(--accent-d);font-size:1.1rem;}
+.modal-box p{margin:0 0 12px;}
+.modal-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:14px;}
+
+@media (max-width:480px){
+  .modal-actions{flex-direction:column;}
+  .modal-actions button{width:100%;}
+  body{padding:12px;}
+  h1{font-size:1.2rem;}
+  .tab{padding:12px 6px;font-size:0.9rem;}
+  .form-row{flex-direction:column;}
+  .form-row input,.form-row select,.form-row button{width:100%;}
+  .item-actions{width:100%;justify-content:flex-start;}
+  .item-actions button{flex:1;}
+}

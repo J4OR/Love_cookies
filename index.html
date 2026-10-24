@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Recetas de Galletas</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<h1>🍪 Recetas de Galletas</h1>
+<div class="tabs">
+  <div class="tab active" data-tab="productos">Productos</div>
+  <div class="tab" data-tab="recetas">Recetas</div>
+  <div class="tab" data-tab="calcular">Calcular</div>
+</div>
+
+<!-- PRODUCTOS -->
+<div class="panel active" id="panel-productos">
+  <div class="card">
+    <div class="form-row">
+      <input id="p-nombre" placeholder="Nombre del producto">
+      <input id="p-precio" type="number" step="any" inputmode="decimal" placeholder="Precio del paquete">
+    </div>
+    <div class="form-row">
+      <input id="p-cantidad" type="number" step="any" inputmode="decimal" placeholder="Cantidad del paquete (ej: 500)">
+      <select id="p-unidad"></select>
+    </div>
+    <div class="form-row">
+      <input id="p-lugar" placeholder="Lugar de compra">
+    </div>
+    <div class="form-row">
+      <button id="p-guardar" style="width:100%">Agregar producto</button>
+    </div>
+  </div>
+  <div class="card">
+    <div class="form-row">
+      <select id="p-filtro-lugar">
+        <option value="">Todos los lugares</option>
+      </select>
+    </div>
+  </div>
+  <div id="lista-productos"></div>
+</div>
+
+<!-- RECETAS -->
+<div class="panel" id="panel-recetas">
+  <div class="card">
+    <div class="form-row">
+      <input id="r-nombre" placeholder="Nombre de la receta">
+      <input id="r-rinde" type="number" min="1" step="1" inputmode="numeric" placeholder="Galletas que rinde">
+    </div>
+    <div class="form-row">
+      <button id="r-nueva" style="width:100%">Crear receta</button>
+    </div>
+  </div>
+  <div id="lista-recetas"></div>
+</div>
+
+<!-- CALCULAR -->
+<div class="panel" id="panel-calcular">
+  <div class="card">
+    <div class="form-row">
+      <select id="c-receta"><option value="">Elige una receta</option></select>
+    </div>
+    <div class="form-row">
+      <input id="c-galletas" type="number" min="1" step="1" inputmode="numeric" placeholder="¿Cuántas galletas quieres hacer?">
+    </div>
+  </div>
+  <div id="c-resultado"></div>
+</div>
+
+<div class="modal-overlay hidden" id="modal-overlay">
+  <div class="modal-box" id="modal-box"></div>
+</div>
+
+<script type="module" src="script.js"></script>
+</body>
+</html>
