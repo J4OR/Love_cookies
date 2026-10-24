@@ -444,9 +444,54 @@ import {
     });
   }
 
-  // ---- Calcular: gasto en materiales según receta y número de galletas ----
-  elCReceta.addEventListener("change", renderCalcular);
-  elCGalletas.addEventListener("input", renderCalcular);
+  // ---- Calcular: varias recetas -> detalle de compra (paquetes y precio) ----
+  let calcLista = [];      // [{recId, galletas}]
+  let calcMostrar = false; // true cuando ya se pulsó "Calcular"
+  const calcYaTengo = new Set(); // productos que el usuario confirmó que ya tiene
+  const elCAgregar = document.getElementById("c-agregar");
+
+  elCAgregar.addEventListener("click", ()=>{
+    const recId = elCReceta.value;
+    const n = parseInt(elCGalletas.value);
+    if(!recId){ alert("Elige una receta."); return; }
+    if(!(n>0)){ alert("Escribe cuántas galletas quieres hacer."); return; }
+    const ya = calcLista.find(x=>x.recId===recId);
+    if(ya) ya.galletas += n; else calcLista.push({ recId, galletas: n });
+    elCGalletas.value = "";
+    calcMostrar = false; calcYaTengo.clear();
+    renderCalcular();
+  });
+
+  // Suma lo que se necesita de cada producto entre todas las recetas y lo pasa a paquetes completos
+  function calcularCompra(entradas){
+    const avisos = [];
+    const acum = new Map();
+    let usado = 0;
+    entradas.forEach(({r, galletas})=>{
+      if(!(r.rinde>0)){
+        avisos.push(`"${r.name}" no tiene definido cuántas galletas rinde (edítala en Recetas); no se incluyó.`);
+        return;
+      }
+      const factor = galletas / r.rinde;
+      costoReceta(r).items.forEach(({it,c})=>{
+        if(!c.ok){ avisos.push(`${r.name}: ${it.productName||"ingrediente"} — ${c.motivo}`); return; }
+        const prod = buscarProducto(it);
+        const a = acum.get(prod.id) || { prod, dim:c.dim, base:0 };
+        a.base += c.base * factor;
+        acum.set(prod.id, a);
+        usado += c.costo * factor;
+      });
+    });
+    const productosCompra = [...acum.values()].map(a=>{
+      const paqBase = parseFloat(a.prod.quantity) * UNIDADES[a.prod.unit].f;
+      const paquetes = Math.max(0, Math.ceil(a.base/paqBase - 1e-9));
+      return { ...a, paqBase, paquetes, sobra: paquetes*paqBase - a.base,
+               total: paquetes * (Number(a.prod.price)||0),
+               usadoProd: a.base/paqBase * (Number(a.prod.price)||0) };
+    }).sort((x,y)=> x.prod.name.localeCompare(y.prod.name));
+    const totalCompra = productosCompra.reduce((t,f)=>t+f.total, 0);
+    return { productosCompra, totalCompra, usado, avisos };
+  }
 
   function renderCalcular(){
     const prev = elCReceta.value;
@@ -454,37 +499,90 @@ import {
       recetas.map(r=>`<option value="${r.id}">${escapeHtml(r.name)}</option>`).join("");
     if(recetas.some(r=>r.id===prev)) elCReceta.value = prev;
 
+    const cl = document.getElementById("c-lista");
     const cont = document.getElementById("c-resultado");
-    const r = recetas.find(x=>x.id===elCReceta.value);
-    const n = parseInt(elCGalletas.value);
-    if(!r || !(n>0)){
-      cont.innerHTML = '<div class="empty">Elige una receta y cuántas galletas quieres hacer.</div>';
+    const filas = calcLista.map((x,i)=>({ x, i, r: recetas.find(r=>r.id===x.recId) })).filter(f=>f.r);
+    if(filas.length===0){
+      cl.innerHTML = '<div class="empty">Agrega las recetas que vas a hacer y cuántas galletas de cada una.</div>';
+      cont.innerHTML = "";
       return;
     }
-    if(!(r.rinde>0)){
-      cont.innerHTML = '<div class="empty">Esta receta no tiene definido cuántas galletas rinde. Defínelo en la pestaña Recetas (botón Editar).</div>';
-      return;
-    }
-    const factor = n / r.rinde;
-    const cr = costoReceta(r);
-    const total = cr.total * factor;
+    cl.innerHTML = `<div class="card">
+      ${filas.map(({x,i,r})=>`
+        <div class="item">
+          <div class="item-info"><b>${escapeHtml(r.name)}</b> — ${numero(x.galletas)} galletas</div>
+          <div class="item-actions"><button class="small danger" data-c-quitar="${i}">Quitar</button></div>
+        </div>`).join("")}
+      <div class="form-row" style="margin-top:10px"><button id="c-calcular" style="width:100%">Calcular</button></div>
+    </div>`;
+    cl.querySelectorAll("[data-c-quitar]").forEach(b=>{
+      b.addEventListener("click", ()=>{
+        calcLista.splice(Number(b.dataset.cQuitar), 1);
+        calcMostrar = false; calcYaTengo.clear();
+        renderCalcular();
+      });
+    });
+    document.getElementById("c-calcular").addEventListener("click", ()=>{
+      calcMostrar = true;
+      renderCalcular();
+    });
+
+    if(!calcMostrar){ cont.innerHTML = ""; return; }
+    const res = calcularCompra(filas.map(f=>({ r:f.r, galletas:f.x.galletas })));
+    const pendientes = res.productosCompra.filter(f=>!calcYaTengo.has(f.prod.id));
+    const yaTengo = res.productosCompra.filter(f=>calcYaTengo.has(f.prod.id));
+    const totalPagar = pendientes.reduce((t,f)=>t+f.total, 0);
+    const usado = pendientes.reduce((t,f)=>t+f.usadoProd, 0);
     cont.innerHTML = `
       <div class="card">
         <div class="total-box">
-          <div class="muted">Gasto estimado en materiales</div>
-          <div class="big">${dinero(total)}</div>
-          <div class="muted">${numero(n)} galletas · ${dinero(total/n)} por galleta</div>
+          <div class="muted">Total a pagar comprando paquetes completos</div>
+          <div class="big">${dinero(totalPagar)}</div>
+          <div class="muted">Costo de lo que realmente usas: ${dinero(usado)}</div>
         </div>
-        <div class="muted" style="margin:10px 0 4px">Equivale a ${numero(factor)} vez/veces la receta (rinde ${r.rinde}). Necesitas:</div>
+        <div class="muted" style="margin:10px 0 4px">Lo que necesitas comprar:</div>
         <ul class="recipe-items">
-          ${cr.items.map(({it,c})=>`
+          ${res.productosCompra.length===0 ? '<li class="muted">No hay ingredientes para calcular.</li>' :
+            pendientes.length===0 ? '<li class="muted">Ya tienes todo lo necesario 🎉</li>' :
+            pendientes.map(f=>`
             <li>
-              <span>${escapeHtml(c.ok ? c.nombre : (it.productName||""))} — ${c.ok ? cantidadBonita(c.base*factor, c.dim) : "?"}</span>
-              <span>${c.ok ? dinero(c.costo*factor) : '<span class="warn">⚠ '+escapeHtml(c.motivo)+'</span>'}</span>
-            </li>`).join("") || '<li class="muted">La receta no tiene ingredientes.</li>'}
+              <span><b>${escapeHtml(f.prod.name)}</b>: necesitas x${f.paquetes}
+                <span class="muted">(paquete de ${numero(f.prod.quantity)} ${escapeHtml(f.prod.unit)} a ${dinero(f.prod.price)})</span>
+                <div class="muted">Usas ${cantidadBonita(f.base, f.dim)} · sobra ${cantidadBonita(Math.max(0,f.sobra), f.dim)}${f.prod.place ? " · Comprar en: "+escapeHtml(f.prod.place) : ""}</div>
+              </span>
+              <span style="text-align:right"><b>${dinero(f.total)}</b>
+                <div><button class="small secondary" data-yatengo="${f.prod.id}">Ya lo tengo</button></div>
+              </span>
+            </li>`).join("")}
         </ul>
-        ${cr.fallos ? `<div class="warn">⚠ ${cr.fallos} ingrediente(s) no se pudieron calcular y no están en el total.</div>` : ""}
+        ${yaTengo.length ? `
+          <div class="muted" style="margin:10px 0 4px">Ya los tienes (no cuentan en el total):</div>
+          <ul class="recipe-items">
+            ${yaTengo.map(f=>`
+              <li>
+                <span>${escapeHtml(f.prod.name)} — x${f.paquetes} (${cantidadBonita(f.base, f.dim)})</span>
+                <span><button class="small secondary" data-deshacer="${f.prod.id}">Deshacer</button></span>
+              </li>`).join("")}
+          </ul>` : ""}
+        ${res.avisos.map(a=>`<div class="warn">⚠ ${escapeHtml(a)}</div>`).join("")}
       </div>`;
+
+    cont.querySelectorAll("[data-yatengo]").forEach(b=>{
+      b.addEventListener("click", ()=>{
+        const f = res.productosCompra.find(x=>x.prod.id===b.dataset.yatengo);
+        confirmarAccion(
+          `¿Seguro que ya tienes lo necesario de "${f.prod.name}" (${cantidadBonita(f.base, f.dim)}, x${f.paquetes} de ${numero(f.prod.quantity)} ${f.prod.unit})? Se quitará del detalle y del total a pagar.`,
+          "Sí, ya lo tengo",
+          async ()=>{ calcYaTengo.add(f.prod.id); renderCalcular(); }
+        );
+      });
+    });
+    cont.querySelectorAll("[data-deshacer]").forEach(b=>{
+      b.addEventListener("click", ()=>{
+        calcYaTengo.delete(b.dataset.deshacer);
+        renderCalcular();
+      });
+    });
   }
 
   function escapeHtml(str){
