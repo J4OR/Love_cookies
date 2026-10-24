@@ -251,7 +251,7 @@ import {
     const cont = document.getElementById("lista-productos");
     const productosFiltrados = productos.filter(p=>
       (!filtroLugar || p.place === filtroLugar) &&
-      (!filtroNombreProductos || String(p.name||"").toLocaleLowerCase().includes(filtroNombreProductos))
+      (!filtroNombreProductos || String(p.name||"").toLocaleLowerCase().startsWith(filtroNombreProductos))
     );
     if(productosFiltrados.length===0){
       cont.innerHTML = '<div class="empty">'+
