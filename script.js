@@ -56,6 +56,66 @@ import {
     const total = items.reduce((t,x)=> t + (x.c.ok ? x.c.costo : 0), 0);
     return { items, total, fallos: items.filter(x=>!x.c.ok).length };
   }
+  // Presentaciones de compra de un producto: la principal + las otras (todas en la misma unidad)
+  function presentaciones(prod){
+    const u = UNIDADES[prod.unit];
+    if(!u) return [];
+    return [{ quantity: parseFloat(prod.quantity), price: prod.price }, ...(prod.opciones||[])]
+      .map(o=>({ quantity:Number(o.quantity), price:Number(o.price)||0, qBase:Number(o.quantity)*u.f }))
+      .filter(o=>o.qBase>0);
+  }
+  // Combinación más barata de presentaciones que cubre "falta" (en g, ml o und)
+  function mejorCompra(falta, ops){
+    const lineas0 = ops.map(o=>({ n:0, quantity:o.quantity, price:o.price }));
+    if(falta<=0.01 || ops.length===0) return { total:0, cubierto:0, lineas:lineas0 };
+    const max = ops.map(o=>Math.ceil(falta/o.qBase - 1e-9));
+    if(max.reduce((t,m)=>t*(m+1), 1) > 200000){ // demasiadas combinaciones: se usa la presentación más barata por unidad
+      let k = 0;
+      ops.forEach((o,i)=>{ if(o.price/o.qBase < ops[k].price/ops[k].qBase) k = i; });
+      return { total:max[k]*ops[k].price, cubierto:max[k]*ops[k].qBase,
+               lineas: ops.map((o,i)=>({ n:i===k?max[k]:0, quantity:o.quantity, price:o.price })) };
+    }
+    let mejor = null;
+    const cuentas = new Array(ops.length).fill(0);
+    (function rec(i, cubierto, costo){
+      if(mejor && costo>mejor.total+1e-9) return;
+      if(i===ops.length){
+        if(cubierto>=falta-0.01 && (!mejor || costo<mejor.total-1e-9 ||
+           (Math.abs(costo-mejor.total)<=1e-9 && cubierto<mejor.cubierto))){
+          mejor = { total:costo, cubierto, cuentas:[...cuentas] };
+        }
+        return;
+      }
+      for(let c=0; c<=max[i]; c++){
+        cuentas[i] = c;
+        rec(i+1, cubierto + c*ops[i].qBase, costo + c*ops[i].price);
+      }
+      cuentas[i] = 0;
+    })(0, 0, 0);
+    return { total:mejor.total, cubierto:mejor.cubierto,
+             lineas: ops.map((o,i)=>({ n:mejor.cuentas[i], quantity:o.quantity, price:o.price })) };
+  }
+  // Filas de "otras presentaciones" (cantidad + precio) para el formulario y la ventana de editar
+  function filaOpcionHtml(o){
+    return `<div class="form-row opcion-row">
+      <input type="number" step="any" min="0" inputmode="decimal" class="o-cant" placeholder="Cantidad (ej: 12)" value="${o ? escapeHtml(String(o.quantity)) : ""}">
+      <input type="number" step="any" min="0" inputmode="decimal" class="o-precio" placeholder="Precio" value="${o ? escapeHtml(String(o.price)) : ""}">
+      <button type="button" class="small danger o-quitar">✕</button>
+    </div>`;
+  }
+  function leerOpciones(cont){
+    return [...cont.querySelectorAll(".opcion-row")].map(r=>({
+      quantity: parseFloat(r.querySelector(".o-cant").value),
+      price: parseFloat(r.querySelector(".o-precio").value)
+    })).filter(o=>o.quantity>0 && o.price>=0);
+  }
+  function enlazarOpciones(cont, botonAgregar, opciones){
+    cont.innerHTML = (opciones||[]).map(filaOpcionHtml).join("");
+    botonAgregar.onclick = ()=> cont.insertAdjacentHTML("beforeend", filaOpcionHtml());
+    cont.onclick = (e)=>{ if(e.target.classList.contains("o-quitar")) e.target.closest(".opcion-row").remove(); };
+  }
+  const textoOpciones = (p)=> (p.opciones||[]).map(o=>`${numero(o.quantity)} ${p.unit} a ${dinero(o.price)}`).join(", ");
+
   function cantidadBonita(base, dim){
     if(dim==="masa") return base>=1000 ? numero(base/1000)+" kg" : numero(base)+" g";
     if(dim==="vol") return base>=1000 ? numero(base/1000)+" l" : numero(base)+" ml";
@@ -155,6 +215,7 @@ import {
         <div class="item-info">
           <b>${escapeHtml(p.name)}</b> — ${dinero(p.price)} · ${escapeHtml(String(p.quantity||""))} ${escapeHtml(p.unit||"")}
           <div class="muted">${escapeHtml(p.place||"")}</div>
+          ${(p.opciones||[]).length ? `<div class="muted">Otras presentaciones: ${escapeHtml(textoOpciones(p))}</div>` : ""}
         </div>
         <div class="item-actions">
           <button class="small secondary" data-edit="${p.id}">Editar</button>
@@ -185,6 +246,9 @@ import {
       <div class="form-row"><input id="m-precio" type="number" step="0.01" placeholder="Precio"></div>
       <div class="form-row"><input id="m-cantidad" type="number" step="any" inputmode="decimal" placeholder="Cantidad del paquete"><select id="m-unidad"></select></div>
       <div class="form-row"><input id="m-lugar" placeholder="Lugar de compra"></div>
+      <div class="muted" style="margin:8px 0 4px">Otras presentaciones (misma unidad):</div>
+      <div id="m-opciones"></div>
+      <div class="form-row"><button type="button" class="small secondary" id="m-add-opcion">+ Agregar presentación</button></div>
       <div class="modal-actions">
         <button class="secondary" id="modal-cancelar">Cancelar</button>
         <button id="modal-guardar">Guardar cambios</button>
@@ -194,6 +258,7 @@ import {
     document.getElementById("m-precio").value = p.price || 0;
     document.getElementById("m-cantidad").value = p.quantity || "";
     document.getElementById("m-unidad").innerHTML = opcionesUnidad(p.unit || "");
+    enlazarOpciones(document.getElementById("m-opciones"), document.getElementById("m-add-opcion"), p.opciones);
     document.getElementById("m-lugar").value = p.place || "";
     document.getElementById("modal-cancelar").addEventListener("click", cerrarModal);
     document.getElementById("modal-guardar").addEventListener("click", async ()=>{
@@ -204,6 +269,7 @@ import {
         price: parseFloat(document.getElementById("m-precio").value)||0,
         quantity: parseFloat(document.getElementById("m-cantidad").value)||0,
         unit: document.getElementById("m-unidad").value,
+        opciones: leerOpciones(document.getElementById("m-opciones")),
         place: document.getElementById("m-lugar").value.trim()
       };
       try{
@@ -224,12 +290,14 @@ import {
       price: parseFloat(elPrecio.value)||0,
       quantity: parseFloat(elCantidad.value)||0,
       unit: document.getElementById("p-unidad").value,
+      opciones: leerOpciones(document.getElementById("p-opciones")),
       place: elLugar.value.trim()
     };
     btnGuardar.disabled = true;
     try{
       await addDoc(productosRef, data);
       elNombre.value=elPrecio.value=elCantidad.value=elLugar.value="";
+      document.getElementById("p-opciones").innerHTML = "";
     }catch(e){
       console.error(e);
       alert("No se pudo guardar el producto.");
@@ -244,6 +312,7 @@ import {
   const elCReceta = document.getElementById("c-receta");
   const elCGalletas = document.getElementById("c-galletas");
   document.getElementById("p-unidad").innerHTML = opcionesUnidad("g");
+  enlazarOpciones(document.getElementById("p-opciones"), document.getElementById("p-add-opcion"), []);
 
   document.getElementById("r-nueva").addEventListener("click", async ()=>{
     const name = elRecNombre.value.trim();
@@ -536,10 +605,11 @@ import {
       const tengo = calcTengo.get(f.prod.id) || 0;
       const falta = Math.max(0, f.base - tengo);
       const precio = Number(f.prod.price)||0;
-      const paquetesComprar = falta<=EPS ? 0 : Math.max(0, Math.ceil(falta/f.paqBase - 1e-9));
-      return { ...f, tengo, falta, paquetesComprar,
-               sobraComprar: paquetesComprar*f.paqBase - falta,
-               totalComprar: paquetesComprar*precio,
+      const compra = mejorCompra(falta<=EPS ? 0 : falta, presentaciones(f.prod));
+      const paquetesComprar = compra.lineas.reduce((t,l)=>t+l.n, 0);
+      return { ...f, tengo, falta, compra, paquetesComprar,
+               sobraComprar: compra.cubierto - falta,
+               totalComprar: compra.total,
                usadoComprar: falta/f.paqBase*precio };
     });
     const pendientes = filasCalc.filter(f=>f.falta>EPS);
@@ -559,8 +629,8 @@ import {
             pendientes.length===0 ? '<li class="muted">Ya tienes todo lo necesario 🎉</li>' :
             pendientes.map(f=>`
             <li>
-              <span><b>${escapeHtml(f.prod.name)}</b>: necesitas x${f.paquetesComprar}
-                <span class="muted">(paquete de ${numero(f.prod.quantity)} ${escapeHtml(f.prod.unit)} a ${dinero(f.prod.price)})</span>
+              <span><b>${escapeHtml(f.prod.name)}</b>: necesitas
+                ${f.compra.lineas.filter(l=>l.n>0).map(l=>`x${l.n} de ${numero(l.quantity)} ${escapeHtml(f.prod.unit)} <span class="muted">(${dinero(l.price)} c/u)</span>`).join(" + ")}
                 <div class="muted">Necesitas ${cantidadBonita(f.base, f.dim)}${f.tengo>0 ? " · tienes "+cantidadBonita(f.tengo, f.dim)+" · te faltan "+cantidadBonita(f.falta, f.dim) : ""} · sobra ${cantidadBonita(Math.max(0,f.sobraComprar), f.dim)}${f.prod.place ? " · Comprar en: "+escapeHtml(f.prod.place) : ""}</div>
               </span>
               <span style="text-align:right"><b>${dinero(f.totalComprar)}</b>
@@ -679,6 +749,7 @@ import {
   function precioItem(i){
     const p = productos.find(x=>x.id===i.productId) ||
               productos.find(x=>(x.name||"").toLowerCase()===(i.name||"").toLowerCase());
+    if(i.precioUnit!==undefined) return (Number(i.precioUnit)||0) * (Number(i.units)||1);
     return p ? (Number(p.price)||0) * (Number(i.units)||1) : null;
   }
 
@@ -774,20 +845,30 @@ import {
     );
   });
 
-  // Crea la lista a partir del detalle de Calcular y abre la pestaña Lista
+  // Crea la lista a partir del detalle de Calcular (una línea por presentación a comprar) y abre la pestaña Lista
   async function crearListaDesdeDetalle(items){
     const aComprar = items.filter(f=>f.paquetesComprar>0);
     if(aComprar.length===0){ alert("No hay nada por comprar en el detalle."); return; }
     try{
-      await Promise.all(aComprar.map(f=>{
-        const data = {
-          name: f.prod.name, place: f.prod.place || "", units: f.paquetesComprar,
-          presentacion: `paquete de ${numero(f.prod.quantity)} ${f.prod.unit}`,
-          productId: f.prod.id, comprado: false
-        };
-        const ya = lista.find(i=>i.productId===f.prod.id && !i.comprado);
-        return ya ? updateDoc(doc(db, "lista", ya.id), data) : addDoc(listaRef, data);
-      }));
+      const ops = [];
+      aComprar.forEach(f=>{
+        const lineas = f.compra.lineas.filter(l=>l.n>0);
+        const quedan = new Set(lineas.map(l=>l.quantity));
+        // pendientes viejos del mismo producto que ya no se necesitan
+        lista.filter(i=>i.productId===f.prod.id && !i.comprado && !quedan.has(i.presQty))
+             .forEach(i=>ops.push(deleteDoc(doc(db, "lista", i.id))));
+        lineas.forEach(l=>{
+          const data = {
+            name: f.prod.name, place: f.prod.place || "", units: l.n,
+            presentacion: `paquete de ${numero(l.quantity)} ${f.prod.unit}`,
+            presQty: l.quantity, precioUnit: l.price,
+            productId: f.prod.id, comprado: false
+          };
+          const ya = lista.find(i=>i.productId===f.prod.id && i.presQty===l.quantity && !i.comprado);
+          ops.push(ya ? updateDoc(doc(db, "lista", ya.id), data) : addDoc(listaRef, data));
+        });
+      });
+      await Promise.all(ops);
       document.querySelector('.tab[data-tab="lista"]').click();
     }catch(e){ console.error(e); alert("No se pudo crear la lista."); }
   }

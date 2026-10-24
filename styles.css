@@ -71,6 +71,10 @@ input[type="checkbox"]{flex:none;min-width:0;width:24px;height:24px;min-height:0
 .modal-box p{margin:0 0 12px;}
 .modal-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:14px;}
 
+.form-row.opcion-row{flex-direction:row;flex-wrap:nowrap;align-items:center;}
+.form-row.opcion-row input{width:auto;min-width:0;}
+.form-row.opcion-row button{width:auto;flex:none;}
+
 @media (max-width:480px){
   .modal-actions{flex-direction:column;}
   .modal-actions button{width:100%;}
