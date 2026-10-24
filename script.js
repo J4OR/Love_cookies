@@ -98,21 +98,63 @@ import {
   // Filas de "otras presentaciones" (cantidad + precio) para el formulario y la ventana de editar
   function filaOpcionHtml(o){
     return `<div class="form-row opcion-row">
-      <input type="number" step="any" min="0" inputmode="decimal" class="o-cant" placeholder="Cantidad (ej: 12)" value="${o ? escapeHtml(String(o.quantity)) : ""}">
-      <input type="number" step="any" min="0" inputmode="decimal" class="o-precio" placeholder="Precio" value="${o ? escapeHtml(String(o.price)) : ""}">
+      <input type="text" class="o-cant" placeholder="Cantidad (12 o 1/2)" value="${o ? escapeHtml(String(o.quantity)) : ""}">
+      <input type="number" step="any" min="0" inputmode="decimal" class="o-precio" placeholder="Precio (opcional)" value="${o ? escapeHtml(String(o.price)) : ""}">
       <button type="button" class="small danger o-quitar">✕</button>
     </div>`;
   }
-  function leerOpciones(cont){
-    return [...cont.querySelectorAll(".opcion-row")].map(r=>({
-      quantity: parseFloat(r.querySelector(".o-cant").value),
-      price: parseFloat(r.querySelector(".o-precio").value)
-    })).filter(o=>o.quantity>0 && o.price>=0);
+  // Interpreta la cantidad de una presentación: número normal (250), fracción de la principal (1/2, 1/4, 3/4),
+  // número mixto (1 1/2) o símbolos (½, ¼, ¾). Las fracciones se calculan sobre la presentación principal.
+  function parseCantidadOpcion(txt, baseQty){
+    let t = String(txt).trim().replace(",", ".");
+    const simb = { "½":0.5, "¼":0.25, "¾":0.75 };
+    let frac = null, m;
+    if(simb[t]!==undefined) frac = simb[t];
+    else {
+      t = t.replace(/[½¼¾]/g, c=>" "+simb[c]).trim();
+      if((m = t.match(/^(\d+(?:\.\d+)?)\s*\/\s*(\d+(?:\.\d+)?)$/)) && parseFloat(m[2])>0) frac = parseFloat(m[1]) / parseFloat(m[2]);
+      else if((m = t.match(/^(\d+)\s+(\d+)\s*\/\s*(\d+)$/)) && parseFloat(m[3])>0) frac = parseInt(m[1]) + parseInt(m[2])/parseFloat(m[3]);
+      else if((m = t.match(/^(\d+)\s+(0?\.\d+)$/))) frac = parseInt(m[1]) + parseFloat(m[2]);
+      else if(/^\d*\.?\d+$/.test(t)) return { quantity: parseFloat(t) > 0 ? parseFloat(t) : null, frac: null };
+    }
+    if(frac===null || !(frac>0) || !(baseQty>0)) return { quantity: null, frac: null };
+    return { quantity: frac * baseQty, frac };
   }
-  function enlazarOpciones(cont, botonAgregar, opciones){
+  function leerOpciones(cont, baseQty, basePrice){
+    return [...cont.querySelectorAll(".opcion-row")].map(r=>{
+      const c = parseCantidadOpcion(r.querySelector(".o-cant").value, baseQty);
+      let price = parseFloat(r.querySelector(".o-precio").value);
+      // fracción sin precio: se calcula proporcional al precio de la presentación principal
+      if(isNaN(price) && c.frac && basePrice>0) price = Math.round(c.frac * basePrice * 100) / 100;
+      return { quantity: c.quantity, price };
+    }).filter(o=>o.quantity>0 && o.price>=0);
+  }
+  function actualizarPreciosSugeridos(cont, cantidadBase, precioBase){
+    const baseQty = parseFloat(cantidadBase.value);
+    const basePrice = parseFloat(precioBase.value);
+    cont.querySelectorAll(".opcion-row").forEach(r=>{
+      const campoCantidad = r.querySelector(".o-cant");
+      const campoPrecio = r.querySelector(".o-precio");
+      const c = parseCantidadOpcion(campoCantidad.value, baseQty);
+      campoPrecio.placeholder = "Precio (opcional)";
+      if(!campoPrecio.value.trim() && c.frac && basePrice>0){
+        const sugerido = Math.round(c.frac * basePrice * 100) / 100;
+        campoPrecio.placeholder = `Precio (sugerido: ${dinero(sugerido)})`;
+      }
+    });
+  }
+  function enlazarOpciones(cont, botonAgregar, opciones, cantidadBase, precioBase){
     cont.innerHTML = (opciones||[]).map(filaOpcionHtml).join("");
-    botonAgregar.onclick = ()=> cont.insertAdjacentHTML("beforeend", filaOpcionHtml());
+    const actualizar = ()=> actualizarPreciosSugeridos(cont, cantidadBase, precioBase);
+    botonAgregar.onclick = ()=>{
+      cont.insertAdjacentHTML("beforeend", filaOpcionHtml());
+      actualizar();
+    };
+    cont.addEventListener("input", actualizar);
     cont.onclick = (e)=>{ if(e.target.classList.contains("o-quitar")) e.target.closest(".opcion-row").remove(); };
+    cantidadBase.addEventListener("input", actualizar);
+    precioBase.addEventListener("input", actualizar);
+    actualizar();
   }
   const textoOpciones = (p)=> (p.opciones||[]).map(o=>`${numero(o.quantity)} ${p.unit} a ${dinero(o.price)}`).join(", ");
 
@@ -171,9 +213,15 @@ import {
   const elLugar = document.getElementById("p-lugar");
   const btnGuardar = document.getElementById("p-guardar");
   const elFiltroLugar = document.getElementById("p-filtro-lugar");
+  const elBuscarProducto = document.getElementById("p-buscar");
+  let filtroNombreProductos = "";
 
   elFiltroLugar.addEventListener("change", ()=>{
     filtroLugar = elFiltroLugar.value;
+    renderProductos();
+  });
+  elBuscarProducto.addEventListener("input", ()=>{
+    filtroNombreProductos = elBuscarProducto.value.trim().toLocaleLowerCase();
     renderProductos();
   });
 
@@ -201,12 +249,13 @@ import {
   function renderProductos(){
     actualizarOpcionesFiltro();
     const cont = document.getElementById("lista-productos");
-    const productosFiltrados = filtroLugar
-      ? productos.filter(p => p.place === filtroLugar)
-      : productos;
+    const productosFiltrados = productos.filter(p=>
+      (!filtroLugar || p.place === filtroLugar) &&
+      (!filtroNombreProductos || String(p.name||"").toLocaleLowerCase().includes(filtroNombreProductos))
+    );
     if(productosFiltrados.length===0){
       cont.innerHTML = '<div class="empty">'+
-        (productos.length===0 ? 'Aún no hay productos agregados.' : 'No hay productos en ese lugar de compra.')
+        (productos.length===0 ? 'Aún no hay productos agregados.' : 'No hay productos que coincidan con la búsqueda y el lugar.')
         +'</div>';
       return;
     }
@@ -246,7 +295,7 @@ import {
       <div class="form-row"><input id="m-precio" type="number" step="0.01" placeholder="Precio"></div>
       <div class="form-row"><input id="m-cantidad" type="number" step="any" inputmode="decimal" placeholder="Cantidad del paquete"><select id="m-unidad"></select></div>
       <div class="form-row"><input id="m-lugar" placeholder="Lugar de compra"></div>
-      <div class="muted" style="margin:8px 0 4px">Otras presentaciones (misma unidad):</div>
+      <div class="muted" style="margin:8px 0 4px">Otras presentaciones (misma unidad). Para 1/2 o 1/4 del paquete principal, deja el precio vacío y se calculará proporcionalmente.</div>
       <div id="m-opciones"></div>
       <div class="form-row"><button type="button" class="small secondary" id="m-add-opcion">+ Agregar presentación</button></div>
       <div class="modal-actions">
@@ -258,7 +307,8 @@ import {
     document.getElementById("m-precio").value = p.price || 0;
     document.getElementById("m-cantidad").value = p.quantity || "";
     document.getElementById("m-unidad").innerHTML = opcionesUnidad(p.unit || "");
-    enlazarOpciones(document.getElementById("m-opciones"), document.getElementById("m-add-opcion"), p.opciones);
+    enlazarOpciones(document.getElementById("m-opciones"), document.getElementById("m-add-opcion"), p.opciones,
+      document.getElementById("m-cantidad"), document.getElementById("m-precio"));
     document.getElementById("m-lugar").value = p.place || "";
     document.getElementById("modal-cancelar").addEventListener("click", cerrarModal);
     document.getElementById("modal-guardar").addEventListener("click", async ()=>{
@@ -269,7 +319,7 @@ import {
         price: parseFloat(document.getElementById("m-precio").value)||0,
         quantity: parseFloat(document.getElementById("m-cantidad").value)||0,
         unit: document.getElementById("m-unidad").value,
-        opciones: leerOpciones(document.getElementById("m-opciones")),
+        opciones: leerOpciones(document.getElementById("m-opciones"), parseFloat(document.getElementById("m-cantidad").value)||0, parseFloat(document.getElementById("m-precio").value)||0),
         place: document.getElementById("m-lugar").value.trim()
       };
       try{
@@ -290,7 +340,7 @@ import {
       price: parseFloat(elPrecio.value)||0,
       quantity: parseFloat(elCantidad.value)||0,
       unit: document.getElementById("p-unidad").value,
-      opciones: leerOpciones(document.getElementById("p-opciones")),
+      opciones: leerOpciones(document.getElementById("p-opciones"), parseFloat(elCantidad.value)||0, parseFloat(elPrecio.value)||0),
       place: elLugar.value.trim()
     };
     btnGuardar.disabled = true;
@@ -312,7 +362,8 @@ import {
   const elCReceta = document.getElementById("c-receta");
   const elCGalletas = document.getElementById("c-galletas");
   document.getElementById("p-unidad").innerHTML = opcionesUnidad("g");
-  enlazarOpciones(document.getElementById("p-opciones"), document.getElementById("p-add-opcion"), []);
+  enlazarOpciones(document.getElementById("p-opciones"), document.getElementById("p-add-opcion"), [],
+    elCantidad, elPrecio);
 
   document.getElementById("r-nueva").addEventListener("click", async ()=>{
     const name = elRecNombre.value.trim();
@@ -708,6 +759,10 @@ import {
   const elLUnidades = document.getElementById("l-unidades");
   const elLBuscar = document.getElementById("l-buscar");
   const elLFiltroLugar = document.getElementById("l-filtro-lugar");
+  const elLGramaje = document.getElementById("l-gramaje");
+  const elLGramajeU = document.getElementById("l-gramaje-unidad");
+  elLGramajeU.innerHTML = opcionesUnidad("");
+  let lastProdId = null;
 
   onSnapshot(listaRef, (snapshot)=>{
     lista = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
@@ -722,14 +777,62 @@ import {
   elLNombre.addEventListener("input", ()=>{
     const p = productos.find(x=>x.name.toLowerCase()===elLNombre.value.trim().toLowerCase());
     if(p && p.place && !elLLugar.value.trim()) elLLugar.value = p.place;
+    if(p && p.unit && lastProdId!==p.id) elLGramajeU.value = p.unit;
+    lastProdId = p ? p.id : null;
+    actualizarAvisoManual();
   });
   elLBuscar.addEventListener("input", ()=>{ lBuscar = elLBuscar.value; renderLista(); });
   elLFiltroLugar.addEventListener("change", ()=>{ lLugar = elLFiltroLugar.value; renderLista(); });
+
+  // ---- Agregar manual por gramaje: calcula las unidades a comprar con las presentaciones del producto ----
+  function planManual(){
+    const cant = parseFloat(elLGramaje.value);
+    if(!(cant>0)) return null; // sin gramaje: se usan las unidades escritas a mano
+    const prod = productos.find(p=>p.name.toLowerCase()===elLNombre.value.trim().toLowerCase());
+    if(!prod) return { motivo:"Para calcular las unidades, el producto debe existir en Productos." };
+    const pu = UNIDADES[prod.unit];
+    if(!pu) return { motivo:"Al producto le falta la unidad (edítalo en Productos)." };
+    const iu = UNIDADES[elLGramajeU.value];
+    if(!iu) return { motivo:"Elige la unidad del gramaje." };
+    if(iu.dim!==pu.dim) return { motivo:`No se puede convertir ${elLGramajeU.value} a ${prod.unit}.` };
+    const falta = cant * iu.f;
+    return { prod, falta, compra: mejorCompra(falta, presentaciones(prod)) };
+  }
+  const textoPlan = (plan)=> plan.compra.lineas.filter(l=>l.n>0)
+    .map(l=>`x${l.n} de ${numero(l.quantity)} ${escapeHtml(plan.prod.unit)}`).join(" + ");
+
+  function actualizarAvisoManual(){
+    const plan = planManual();
+    elLUnidades.disabled = !!(parseFloat(elLGramaje.value)>0);
+    document.getElementById("l-aviso").innerHTML = !plan ? "" :
+      plan.motivo ? `<span class="warn">⚠ ${escapeHtml(plan.motivo)}</span>` :
+      `Necesitas: <b>${textoPlan(plan)}</b> · ${dinero(plan.compra.total)}`;
+  }
+  elLGramaje.addEventListener("input", actualizarAvisoManual);
+  elLGramajeU.addEventListener("change", actualizarAvisoManual);
 
   document.getElementById("l-agregar").addEventListener("click", async ()=>{
     const name = elLNombre.value.trim();
     const units = parseInt(elLUnidades.value);
     if(!name){ alert("Escribe el producto que necesitas comprar."); return; }
+    const plan = planManual();
+    if(plan){
+      if(plan.motivo){ alert(plan.motivo); return; }
+      const lineas = plan.compra.lineas.filter(l=>l.n>0);
+      if(lineas.length===0){ alert("Con esa cantidad no hay nada que comprar."); return; }
+      try{
+        const place = elLLugar.value.trim() || plan.prod.place || "";
+        await Promise.all(lineas.map(l=>addDoc(listaRef, {
+          name: plan.prod.name, place, units: l.n,
+          presentacion: `paquete de ${numero(l.quantity)} ${plan.prod.unit}`,
+          presQty: l.quantity, precioUnit: l.price, productId: plan.prod.id, comprado: false
+        })));
+        document.getElementById("l-aviso").innerHTML = `Agregado: <b>${escapeHtml(plan.prod.name)}</b> — ${textoPlan(plan)} · ${dinero(plan.compra.total)}`;
+        elLNombre.value = elLLugar.value = elLGramaje.value = ""; elLUnidades.value = "1"; elLUnidades.disabled = false;
+        lastProdId = null;
+      }catch(e){ console.error(e); alert("No se pudo agregar a la lista."); }
+      return;
+    }
     if(!(units>0)){ alert("Escribe cuántas unidades debes comprar."); return; }
     const prod = productos.find(p=>p.name.toLowerCase()===name.toLowerCase());
     try{

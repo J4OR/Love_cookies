@@ -29,7 +29,7 @@
     <div class="form-row">
       <input id="p-lugar" placeholder="Lugar de compra">
     </div>
-    <div class="muted" style="margin:4px 0">Otras presentaciones (opcional, en la misma unidad). Ej: docena = 12 y su precio:</div>
+    <div class="muted" style="margin:4px 0">Al agregar o editar, puedes agregar presentaciones como 1/2 o 1/4. Su precio se calcula proporcionalmente al paquete principal (por ejemplo, 500 g); deja el precio vacío para usar el sugerido.</div>
     <div id="p-opciones"></div>
     <div class="form-row">
       <button type="button" id="p-add-opcion" class="small secondary">+ Agregar presentación</button>
@@ -40,6 +40,7 @@
   </div>
   <div class="card">
     <div class="form-row">
+      <input id="p-buscar" type="search" placeholder="Buscar productos por nombre">
       <select id="p-filtro-lugar">
         <option value="">Todos los lugares</option>
       </select>
@@ -89,9 +90,14 @@
       <datalist id="l-lugares"></datalist>
     </div>
     <div class="form-row">
-      <input id="l-unidades" type="number" min="1" step="1" inputmode="numeric" value="1" placeholder="Unidades a comprar">
+      <input id="l-gramaje" type="number" min="0" step="any" inputmode="decimal" placeholder="Gramaje que necesito (opcional)">
+      <select id="l-gramaje-unidad"></select>
+    </div>
+    <div class="form-row">
+      <input id="l-unidades" type="number" min="1" step="1" inputmode="numeric" value="1" placeholder="o unidades a comprar">
       <button id="l-agregar">Agregar a la lista</button>
     </div>
+    <div id="l-aviso" class="muted"></div>
   </div>
   <div class="card">
     <div class="form-row">

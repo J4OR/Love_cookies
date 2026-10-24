@@ -55,6 +55,7 @@ button.small{padding:7px 10px;font-size:0.8rem;min-height:36px;}
 .total-box{text-align:center;padding:8px 0;}
 .big{font-size:1.9rem;font-weight:700;color:var(--accent-d);}
 
+input:disabled{opacity:0.5;}
 input[type="checkbox"]{flex:none;min-width:0;width:24px;height:24px;min-height:0;padding:0;accent-color:var(--accent);}
 .item.hecho .item-info{color:var(--muted);text-decoration:line-through;}
 .item.hecho .item-info .muted{text-decoration:none;}
