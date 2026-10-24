@@ -269,6 +269,7 @@ import {
   function renderRecetas(){
     const cont = document.getElementById("lista-recetas");
     renderCalcular();
+    renderLista();
     if(recetas.length===0){
       cont.innerHTML = '<div class="empty">Aún no hay recetas creadas.</div>';
       return;
@@ -577,8 +578,10 @@ import {
               </li>`).join("")}
           </ul>` : ""}
         ${res.avisos.map(a=>`<div class="warn">⚠ ${escapeHtml(a)}</div>`).join("")}
+        <div class="form-row" style="margin-top:12px"><button id="c-crear-lista" style="width:100%">Crear lista</button></div>
       </div>`;
 
+    document.getElementById("c-crear-lista").addEventListener("click", ()=> crearListaDesdeDetalle(pendientes));
     cont.querySelectorAll("[data-yatengo]").forEach(b=>{
       b.addEventListener("click", ()=>{
         abrirModalTengo(filasCalc.find(x=>x.prod.id===b.dataset.yatengo));
@@ -624,6 +627,131 @@ import {
       cerrarModal();
       renderCalcular();
     });
+  }
+
+  // ---- Lista de compras ----
+  const listaRef = collection(db, "lista");
+  let lista = [];
+  let lBuscar = "", lLugar = "";
+  const elLNombre = document.getElementById("l-nombre");
+  const elLLugar = document.getElementById("l-lugar");
+  const elLUnidades = document.getElementById("l-unidades");
+  const elLBuscar = document.getElementById("l-buscar");
+  const elLFiltroLugar = document.getElementById("l-filtro-lugar");
+
+  onSnapshot(listaRef, (snapshot)=>{
+    lista = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+    renderLista();
+  }, (error)=>{
+    console.error("Error leyendo la lista:", error);
+    document.getElementById("l-pendientes").innerHTML =
+      '<div class="empty">No se pudo conectar con la base de datos. Revisa la consola.</div>';
+  });
+
+  // al escribir un producto que ya existe, se sugiere su lugar de compra
+  elLNombre.addEventListener("input", ()=>{
+    const p = productos.find(x=>x.name.toLowerCase()===elLNombre.value.trim().toLowerCase());
+    if(p && p.place && !elLLugar.value.trim()) elLLugar.value = p.place;
+  });
+  elLBuscar.addEventListener("input", ()=>{ lBuscar = elLBuscar.value; renderLista(); });
+  elLFiltroLugar.addEventListener("change", ()=>{ lLugar = elLFiltroLugar.value; renderLista(); });
+
+  document.getElementById("l-agregar").addEventListener("click", async ()=>{
+    const name = elLNombre.value.trim();
+    const units = parseInt(elLUnidades.value);
+    if(!name){ alert("Escribe el producto que necesitas comprar."); return; }
+    if(!(units>0)){ alert("Escribe cuántas unidades debes comprar."); return; }
+    const prod = productos.find(p=>p.name.toLowerCase()===name.toLowerCase());
+    try{
+      await addDoc(listaRef, {
+        name: prod ? prod.name : name,
+        place: elLLugar.value.trim() || (prod && prod.place) || "",
+        units,
+        presentacion: prod && prod.unit ? `paquete de ${numero(prod.quantity)} ${prod.unit}` : "",
+        productId: prod ? prod.id : "",
+        comprado: false
+      });
+      elLNombre.value = elLLugar.value = ""; elLUnidades.value = "1";
+    }catch(e){ console.error(e); alert("No se pudo agregar a la lista."); }
+  });
+
+  function filaLista(i){
+    return `
+      <div class="item${i.comprado ? " hecho" : ""}">
+        <input type="checkbox" data-l-chk="${i.id}" ${i.comprado ? "checked" : ""} aria-label="Comprado">
+        <div class="item-info"><b>${escapeHtml(i.name||"")}</b> — x${escapeHtml(String(i.units||1))}
+          ${i.presentacion ? `<span class="muted">(${escapeHtml(i.presentacion)})</span>` : ""}
+          <div class="muted">${i.place ? "Comprar en: "+escapeHtml(i.place) : "Sin lugar de compra"}</div>
+        </div>
+        <div class="item-actions"><button class="small danger" data-l-del="${i.id}">Eliminar</button></div>
+      </div>`;
+  }
+
+  function renderLista(){
+    const porNombre = (a,b)=> (a||"").localeCompare(b||"");
+    document.getElementById("l-productos").innerHTML = productos.map(p=>`<option value="${escapeHtml(p.name)}">`).join("");
+    const todosLugares = [...new Set([...productos.map(p=>p.place), ...lista.map(i=>i.place)].filter(l=>l && l.trim()))].sort(porNombre);
+    document.getElementById("l-lugares").innerHTML = todosLugares.map(l=>`<option value="${escapeHtml(l)}">`).join("");
+
+    const lugaresLista = [...new Set(lista.map(i=>i.place).filter(l=>l && l.trim()))].sort(porNombre);
+    const prev = elLFiltroLugar.value;
+    elLFiltroLugar.innerHTML = '<option value="">Todos los lugares</option>' +
+      lugaresLista.map(l=>`<option value="${escapeHtml(l)}">${escapeHtml(l)}</option>`).join("");
+    if(lugaresLista.includes(prev)) elLFiltroLugar.value = prev; else lLugar = "";
+
+    const q = lBuscar.trim().toLowerCase();
+    const visibles = lista
+      .filter(i=> (!lLugar || i.place===lLugar) && (!q || (i.name||"").toLowerCase().includes(q)))
+      .sort((a,b)=> porNombre(a.place,b.place) || porNombre(a.name,b.name));
+    const pend = visibles.filter(i=>!i.comprado);
+    const comp = visibles.filter(i=>i.comprado);
+
+    const cp = document.getElementById("l-pendientes");
+    const cc = document.getElementById("l-comprados");
+    if(lista.length===0){
+      cp.innerHTML = '<div class="empty">Tu lista está vacía. Agrega productos arriba o créala desde Calcular.</div>';
+    } else if(visibles.length===0){
+      cp.innerHTML = '<div class="empty">No hay productos con ese filtro.</div>';
+    } else {
+      cp.innerHTML = `<div class="card"><div class="muted" style="margin-bottom:4px">Por comprar (${pend.length})</div>
+        ${pend.length ? pend.map(filaLista).join("") : '<div class="empty">No tienes nada pendiente 🎉</div>'}</div>`;
+    }
+    cc.innerHTML = comp.length ? `<div class="card"><div class="muted" style="margin-bottom:4px">Ya comprado (${comp.length})</div>
+      ${comp.map(filaLista).join("")}</div>` : "";
+
+    document.getElementById("panel-lista").querySelectorAll("[data-l-chk]").forEach(c=>{
+      c.addEventListener("change", async ()=>{
+        try{ await updateDoc(doc(db, "lista", c.dataset.lChk), { comprado: c.checked }); }
+        catch(e){ console.error(e); alert("No se pudo actualizar el producto."); }
+      });
+    });
+    document.getElementById("panel-lista").querySelectorAll("[data-l-del]").forEach(b=>{
+      b.addEventListener("click", ()=>{
+        const i = lista.find(x=>x.id===b.dataset.lDel);
+        confirmarAccion(`¿Quitar "${i.name}" de la lista?`, "Quitar", async ()=>{
+          try{ await deleteDoc(doc(db, "lista", i.id)); }
+          catch(e){ console.error(e); alert("No se pudo quitar el producto."); }
+        });
+      });
+    });
+  }
+
+  // Crea la lista a partir del detalle de Calcular y abre la pestaña Lista
+  async function crearListaDesdeDetalle(items){
+    const aComprar = items.filter(f=>f.paquetesComprar>0);
+    if(aComprar.length===0){ alert("No hay nada por comprar en el detalle."); return; }
+    try{
+      await Promise.all(aComprar.map(f=>{
+        const data = {
+          name: f.prod.name, place: f.prod.place || "", units: f.paquetesComprar,
+          presentacion: `paquete de ${numero(f.prod.quantity)} ${f.prod.unit}`,
+          productId: f.prod.id, comprado: false
+        };
+        const ya = lista.find(i=>i.productId===f.prod.id && !i.comprado);
+        return ya ? updateDoc(doc(db, "lista", ya.id), data) : addDoc(listaRef, data);
+      }));
+      document.querySelector('.tab[data-tab="lista"]').click();
+    }catch(e){ console.error(e); alert("No se pudo crear la lista."); }
   }
 
   function escapeHtml(str){

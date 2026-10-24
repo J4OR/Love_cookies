@@ -12,6 +12,7 @@
   <div class="tab active" data-tab="productos">Productos</div>
   <div class="tab" data-tab="recetas">Recetas</div>
   <div class="tab" data-tab="calcular">Calcular</div>
+  <div class="tab" data-tab="lista">Lista</div>
 </div>
 
 <!-- PRODUCTOS -->
@@ -71,6 +72,30 @@
   </div>
   <div id="c-lista"></div>
   <div id="c-resultado"></div>
+</div>
+
+<!-- LISTA DE COMPRAS -->
+<div class="panel" id="panel-lista">
+  <div class="card">
+    <div class="form-row">
+      <input id="l-nombre" list="l-productos" placeholder="Producto a comprar">
+      <datalist id="l-productos"></datalist>
+      <input id="l-lugar" list="l-lugares" placeholder="Lugar de compra">
+      <datalist id="l-lugares"></datalist>
+    </div>
+    <div class="form-row">
+      <input id="l-unidades" type="number" min="1" step="1" inputmode="numeric" value="1" placeholder="Unidades a comprar">
+      <button id="l-agregar">Agregar a la lista</button>
+    </div>
+  </div>
+  <div class="card">
+    <div class="form-row">
+      <input id="l-buscar" type="search" placeholder="Buscar por nombre">
+      <select id="l-filtro-lugar"><option value="">Todos los lugares</option></select>
+    </div>
+  </div>
+  <div id="l-pendientes"></div>
+  <div id="l-comprados"></div>
 </div>
 
 <div class="modal-overlay hidden" id="modal-overlay">

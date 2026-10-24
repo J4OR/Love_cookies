@@ -55,6 +55,10 @@ button.small{padding:7px 10px;font-size:0.8rem;min-height:36px;}
 .total-box{text-align:center;padding:8px 0;}
 .big{font-size:1.9rem;font-weight:700;color:var(--accent-d);}
 
+input[type="checkbox"]{flex:none;min-width:0;width:24px;height:24px;min-height:0;padding:0;accent-color:var(--accent);}
+.item.hecho .item-info{color:var(--muted);text-decoration:line-through;}
+.item.hecho .item-info .muted{text-decoration:none;}
+
 .modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,0.45);display:flex;
   align-items:center;justify-content:center;z-index:50;padding:16px;
   padding-top:calc(16px + env(safe-area-inset-top,0px));
@@ -72,7 +76,7 @@ button.small{padding:7px 10px;font-size:0.8rem;min-height:36px;}
   .modal-actions button{width:100%;}
   body{padding:12px;}
   h1{font-size:1.2rem;}
-  .tab{padding:12px 6px;font-size:0.9rem;}
+  .tab{padding:12px 4px;font-size:0.8rem;}
   .form-row{flex-direction:column;}
   .form-row input,.form-row select,.form-row button{width:100%;}
   .item-actions{width:100%;justify-content:flex-start;}
