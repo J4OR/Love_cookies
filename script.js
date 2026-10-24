@@ -447,7 +447,7 @@ import {
   // ---- Calcular: varias recetas -> detalle de compra (paquetes y precio) ----
   let calcLista = [];      // [{recId, galletas}]
   let calcMostrar = false; // true cuando ya se pulsó "Calcular"
-  const calcYaTengo = new Set(); // productos que el usuario confirmó que ya tiene
+  const calcTengo = new Map(); // productId -> cantidad que ya tiene (en g, ml o und)
   const elCAgregar = document.getElementById("c-agregar");
 
   elCAgregar.addEventListener("click", ()=>{
@@ -458,7 +458,7 @@ import {
     const ya = calcLista.find(x=>x.recId===recId);
     if(ya) ya.galletas += n; else calcLista.push({ recId, galletas: n });
     elCGalletas.value = "";
-    calcMostrar = false; calcYaTengo.clear();
+    calcMostrar = false; calcTengo.clear();
     renderCalcular();
   });
 
@@ -518,7 +518,7 @@ import {
     cl.querySelectorAll("[data-c-quitar]").forEach(b=>{
       b.addEventListener("click", ()=>{
         calcLista.splice(Number(b.dataset.cQuitar), 1);
-        calcMostrar = false; calcYaTengo.clear();
+        calcMostrar = false; calcTengo.clear();
         renderCalcular();
       });
     });
@@ -529,10 +529,22 @@ import {
 
     if(!calcMostrar){ cont.innerHTML = ""; return; }
     const res = calcularCompra(filas.map(f=>({ r:f.r, galletas:f.x.galletas })));
-    const pendientes = res.productosCompra.filter(f=>!calcYaTengo.has(f.prod.id));
-    const yaTengo = res.productosCompra.filter(f=>calcYaTengo.has(f.prod.id));
-    const totalPagar = pendientes.reduce((t,f)=>t+f.total, 0);
-    const usado = pendientes.reduce((t,f)=>t+f.usadoProd, 0);
+    // Se resta lo que el usuario ya tiene y se recalculan los paquetes con lo que falta
+    const EPS = 0.01; // tolerancia en g/ml/und
+    const filasCalc = res.productosCompra.map(f=>{
+      const tengo = calcTengo.get(f.prod.id) || 0;
+      const falta = Math.max(0, f.base - tengo);
+      const precio = Number(f.prod.price)||0;
+      const paquetesComprar = falta<=EPS ? 0 : Math.max(0, Math.ceil(falta/f.paqBase - 1e-9));
+      return { ...f, tengo, falta, paquetesComprar,
+               sobraComprar: paquetesComprar*f.paqBase - falta,
+               totalComprar: paquetesComprar*precio,
+               usadoComprar: falta/f.paqBase*precio };
+    });
+    const pendientes = filasCalc.filter(f=>f.falta>EPS);
+    const yaTengo = filasCalc.filter(f=>f.tengo>0 && f.falta<=EPS);
+    const totalPagar = pendientes.reduce((t,f)=>t+f.totalComprar, 0);
+    const usado = pendientes.reduce((t,f)=>t+f.usadoComprar, 0);
     cont.innerHTML = `
       <div class="card">
         <div class="total-box">
@@ -546,12 +558,12 @@ import {
             pendientes.length===0 ? '<li class="muted">Ya tienes todo lo necesario 🎉</li>' :
             pendientes.map(f=>`
             <li>
-              <span><b>${escapeHtml(f.prod.name)}</b>: necesitas x${f.paquetes}
+              <span><b>${escapeHtml(f.prod.name)}</b>: necesitas x${f.paquetesComprar}
                 <span class="muted">(paquete de ${numero(f.prod.quantity)} ${escapeHtml(f.prod.unit)} a ${dinero(f.prod.price)})</span>
-                <div class="muted">Usas ${cantidadBonita(f.base, f.dim)} · sobra ${cantidadBonita(Math.max(0,f.sobra), f.dim)}${f.prod.place ? " · Comprar en: "+escapeHtml(f.prod.place) : ""}</div>
+                <div class="muted">Necesitas ${cantidadBonita(f.base, f.dim)}${f.tengo>0 ? " · tienes "+cantidadBonita(f.tengo, f.dim)+" · te faltan "+cantidadBonita(f.falta, f.dim) : ""} · sobra ${cantidadBonita(Math.max(0,f.sobraComprar), f.dim)}${f.prod.place ? " · Comprar en: "+escapeHtml(f.prod.place) : ""}</div>
               </span>
-              <span style="text-align:right"><b>${dinero(f.total)}</b>
-                <div><button class="small secondary" data-yatengo="${f.prod.id}">Ya lo tengo</button></div>
+              <span style="text-align:right"><b>${dinero(f.totalComprar)}</b>
+                <div><button class="small secondary" data-yatengo="${f.prod.id}">${f.tengo>0 ? "Cambiar lo que tengo" : "Ya lo tengo"}</button></div>
               </span>
             </li>`).join("")}
         </ul>
@@ -560,7 +572,7 @@ import {
           <ul class="recipe-items">
             ${yaTengo.map(f=>`
               <li>
-                <span>${escapeHtml(f.prod.name)} — x${f.paquetes} (${cantidadBonita(f.base, f.dim)})</span>
+                <span>${escapeHtml(f.prod.name)} — tienes ${cantidadBonita(f.tengo, f.dim)} (necesitas ${cantidadBonita(f.base, f.dim)})</span>
                 <span><button class="small secondary" data-deshacer="${f.prod.id}">Deshacer</button></span>
               </li>`).join("")}
           </ul>` : ""}
@@ -569,19 +581,48 @@ import {
 
     cont.querySelectorAll("[data-yatengo]").forEach(b=>{
       b.addEventListener("click", ()=>{
-        const f = res.productosCompra.find(x=>x.prod.id===b.dataset.yatengo);
-        confirmarAccion(
-          `¿Seguro que ya tienes lo necesario de "${f.prod.name}" (${cantidadBonita(f.base, f.dim)}, x${f.paquetes} de ${numero(f.prod.quantity)} ${f.prod.unit})? Se quitará del detalle y del total a pagar.`,
-          "Sí, ya lo tengo",
-          async ()=>{ calcYaTengo.add(f.prod.id); renderCalcular(); }
-        );
+        abrirModalTengo(filasCalc.find(x=>x.prod.id===b.dataset.yatengo));
       });
     });
     cont.querySelectorAll("[data-deshacer]").forEach(b=>{
       b.addEventListener("click", ()=>{
-        calcYaTengo.delete(b.dataset.deshacer);
+        calcTengo.delete(b.dataset.deshacer);
         renderCalcular();
       });
+    });
+  }
+
+  const opcionesUnidadDim = (dim, sel)=> Object.entries(UNIDADES).filter(([,u])=>u.dim===dim)
+    .map(([k,u])=>`<option value="${k}"${k===sel?" selected":""}>${u.txt}</option>`).join("");
+
+  // Ventana: confirmar que ya tiene el producto e indicar cuánto tiene
+  function abrirModalTengo(f){
+    if(!f) return;
+    const inicial = calcTengo.has(f.prod.id) ? calcTengo.get(f.prod.id) : f.base;
+    abrirModal(`
+      <h3>Ya tengo este producto</h3>
+      <p><b>${escapeHtml(f.prod.name)}</b>: necesitas ${cantidadBonita(f.base, f.dim)}.</p>
+      <p class="muted">¿Seguro que ya lo tienes? Escribe cuánto tienes y se restará de lo que necesitas comprar.</p>
+      <div class="form-row">
+        <input id="m-tengo-cant" type="number" step="any" min="0" inputmode="decimal" placeholder="Cantidad que tienes">
+        <select id="m-tengo-unidad"></select>
+      </div>
+      <div class="modal-actions">
+        <button class="secondary" id="modal-cancelar">Cancelar</button>
+        <button id="modal-guardar">Sí, ya lo tengo</button>
+      </div>
+    `);
+    document.getElementById("m-tengo-cant").value = parseFloat((inicial / UNIDADES[f.prod.unit].f).toFixed(6));
+    document.getElementById("m-tengo-unidad").innerHTML = opcionesUnidadDim(f.dim, f.prod.unit);
+    document.getElementById("modal-cancelar").addEventListener("click", cerrarModal);
+    document.getElementById("modal-guardar").addEventListener("click", ()=>{
+      const cant = parseFloat(document.getElementById("m-tengo-cant").value);
+      const unit = document.getElementById("m-tengo-unidad").value;
+      if(!(cant>=0)){ alert("Escribe cuánto tienes."); return; }
+      const base = cant * UNIDADES[unit].f;
+      if(base>0) calcTengo.set(f.prod.id, base); else calcTengo.delete(f.prod.id);
+      cerrarModal();
+      renderCalcular();
     });
   }
 
