@@ -675,19 +675,27 @@ import {
     }catch(e){ console.error(e); alert("No se pudo agregar a la lista."); }
   });
 
+  // Precio de un producto de la lista = unidades x precio del producto (null si no se encuentra el producto)
+  function precioItem(i){
+    const p = productos.find(x=>x.id===i.productId) ||
+              productos.find(x=>(x.name||"").toLowerCase()===(i.name||"").toLowerCase());
+    return p ? (Number(p.price)||0) * (Number(i.units)||1) : null;
+  }
+
   function filaLista(i){
     return `
       <div class="item${i.comprado ? " hecho" : ""}">
         <input type="checkbox" data-l-chk="${i.id}" ${i.comprado ? "checked" : ""} aria-label="Comprado">
         <div class="item-info"><b>${escapeHtml(i.name||"")}</b> — x${escapeHtml(String(i.units||1))}
           ${i.presentacion ? `<span class="muted">(${escapeHtml(i.presentacion)})</span>` : ""}
-          <div class="muted">${i.place ? "Comprar en: "+escapeHtml(i.place) : "Sin lugar de compra"}</div>
+          <div class="muted">${i.place ? "Comprar en: "+escapeHtml(i.place) : "Sin lugar de compra"}${precioItem(i)!==null ? " · "+dinero(precioItem(i)) : ""}</div>
         </div>
         <div class="item-actions"><button class="small danger" data-l-del="${i.id}">Eliminar</button></div>
       </div>`;
   }
 
   function renderLista(){
+    document.getElementById("l-eliminar-wrap").style.display = lista.length ? "" : "none";
     const porNombre = (a,b)=> (a||"").localeCompare(b||"");
     document.getElementById("l-productos").innerHTML = productos.map(p=>`<option value="${escapeHtml(p.name)}">`).join("");
     const todosLugares = [...new Set([...productos.map(p=>p.place), ...lista.map(i=>i.place)].filter(l=>l && l.trim()))].sort(porNombre);
@@ -705,6 +713,23 @@ import {
       .sort((a,b)=> porNombre(a.place,b.place) || porNombre(a.name,b.name));
     const pend = visibles.filter(i=>!i.comprado);
     const comp = visibles.filter(i=>i.comprado);
+
+    // Cuadro de total: lo que falta por pagar baja cada vez que se marca algo como comprado
+    let falta = 0, pagado = 0, sinPrecio = 0;
+    visibles.forEach(i=>{
+      const t = precioItem(i);
+      if(t===null){ sinPrecio++; return; }
+      if(i.comprado) pagado += t; else falta += t;
+    });
+    document.getElementById("l-total").innerHTML = lista.length===0 ? "" : `
+      <div class="card">
+        <div class="total-box">
+          <div class="muted">${(lLugar || q) ? "Falta por pagar (con el filtro actual)" : "Falta por pagar"}</div>
+          <div class="big">${dinero(falta)}</div>
+          <div class="muted">Ya comprado: ${dinero(pagado)} · Total de la lista: ${dinero(falta+pagado)}</div>
+          ${sinPrecio ? `<div class="warn">⚠ ${sinPrecio} producto(s) sin precio no están en el total.</div>` : ""}
+        </div>
+      </div>`;
 
     const cp = document.getElementById("l-pendientes");
     const cc = document.getElementById("l-comprados");
@@ -735,6 +760,19 @@ import {
       });
     });
   }
+
+  // Eliminar toda la lista (con ventana de confirmación)
+  document.getElementById("l-eliminar-todo").addEventListener("click", ()=>{
+    if(lista.length===0) return;
+    confirmarAccion(
+      `¿Eliminar toda la lista (${lista.length} producto(s))? Esta acción no se puede deshacer.`,
+      "OK",
+      async ()=>{
+        try{ await Promise.all(lista.map(i=>deleteDoc(doc(db, "lista", i.id)))); }
+        catch(e){ console.error(e); alert("No se pudo eliminar la lista."); }
+      }
+    );
+  });
 
   // Crea la lista a partir del detalle de Calcular y abre la pestaña Lista
   async function crearListaDesdeDetalle(items){
